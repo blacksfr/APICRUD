@@ -31,5 +31,9 @@
     "nodemon": "^3.1.11",
     "supertest": "^7.2.2",
     "vitest": "^4.0.18"
-  }
+  },
+  "overrides": {
+  "minimatch": "^10.2.1",
+  "glob": "^11.0.0"
+}
 }

@@ -11,7 +11,7 @@ const commonConfig = {
 export const registerLimiter = rateLimit({
   ...commonConfig,
   windowMs: 60 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 3 : 1000000, 
+  max: process.env.NODE_ENV === 'test' ? 4 : process.env.NODE_ENV === 'production' ? 3 : 1000000, 
   message: { 
     error: "Too many registration attempts", 
     message: "Please wait 1 hour before trying to create a new account again." 

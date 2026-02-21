@@ -29,6 +29,8 @@ export default class MongoDBConnection {
       return this.#getAndCacheDb(targetDb);
     }
 
+    
+
     this.#connectionPromise = (async () => {
       let tempClient = null;
       try {
@@ -58,6 +60,19 @@ export default class MongoDBConnection {
 
     await this.#connectionPromise;
     return this.#getAndCacheDb(targetDb);
+  }
+
+  static async killConnection() {
+    if (this.#client) {
+      try {
+        await this.#client.close();
+        console.log("[MongoDB] Connection closed gracefully.");
+      } catch (err) {
+        console.error("[MongoDB] Error during disconnection:", err.message);
+      } finally {
+        this.#reset();
+      }
+    }
   }
 
   static #getAndCacheDb(name) {
