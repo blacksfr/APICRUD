@@ -1,0 +1,7 @@
+node_modules
+tests
+.github
+.env
+.env.*
+README.md
+vitest.config.js
