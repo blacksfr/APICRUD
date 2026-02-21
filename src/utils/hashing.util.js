@@ -5,7 +5,7 @@ const preHash = (password) => {
     return createHash('sha256').update(password).digest('hex');
 };
 
-export const SecurityUtils = {
+export const HashingUtils = {
 
     async hashPassword(password) {
         if (!password || typeof password !== 'string') {

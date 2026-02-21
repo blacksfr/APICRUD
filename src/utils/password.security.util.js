@@ -1,5 +1,4 @@
 import { randomInt } from 'node:crypto';
-import { ca } from 'zod/locales';
 
 const CHARSETS = {
     upper: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",

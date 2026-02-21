@@ -1,20 +1,20 @@
 import jwt from 'jsonwebtoken';
-import userRepository from '../repositories/UserRepository.js';
-import { UserSchema, LoginSchema } from '../models/UserSchema.js';
-import { MongoIdSchema } from '../models/DatabaseSchema.js';
-import { SecurityUtils } from '../utils/SecurityUtils.js';
-import { InvalidIDFormatError } from '../errors/ValidationError.js';
-import { UserDbOutputSchemaPublic } from '../models/DatabaseSchema.js';
+import UserRepository from '../repositories/user.repository.js';
+import { UserSchema, LoginSchema } from '../models/user.model.js';
+import { MongoIdSchema } from '../models/database.model.js';
+import { HashingUtils } from '../utils/hashing.util.js';
+import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
+import { UserDbOutputPublicSchema } from '../models/database.model.js';
 
 export const login = async (req, res) => {
   try {
     const { username, password } = LoginSchema.parse(req.body);
-    const user = await userRepository.findForLogin({ username });
+    const user = await UserRepository.findForLogin({ username });
 
-    if (!user || !(await SecurityUtils.comparePassword(password, user.password))) {
+    if (!user || !(await HashingUtils.comparePassword(password, user.password))) {
       return res.status(401).json({ error: "UNAUTHORIZED", message: "Invalid username or password" });
     }
-    const sanitizedUser = UserDbOutputSchemaPublic.parse(user);
+    const sanitizedUser = UserDbOutputPublicSchema.parse(user);
     const accessToken = jwt.sign(
       { id: sanitizedUser.id, username: sanitizedUser.username },
       process.env.JWT_SECRET,
@@ -99,12 +99,12 @@ export const registerUser = async (req, res) => {
   try {
     const validatedData = UserSchema.parse(req.body);
 
-    const existingUser = await userRepository.findOne({ username: validatedData.username });
+    const existingUser = await UserRepository.findOne({ username: validatedData.username });
     if (existingUser) return res.status(409).json({ error: "CONFLICT", message: "This username is already taken" });
 
-    const hashedPassword = await SecurityUtils.hashPassword(validatedData.password);
+    const hashedPassword = await HashingUtils.hashPassword(validatedData.password);
 
-    const newUser = await userRepository.create({
+    const newUser = await UserRepository.create({
       username: validatedData.username,
       password: hashedPassword
     });
@@ -158,7 +158,7 @@ export const getUserById = async (req, res) => {
       });
     }
 
-    const user = await userRepository.findById(id);
+    const user = await UserRepository.findById(id);
     if (!user) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
 
     return res.status(200).json({ message: "User retrieved successfully", user });
@@ -189,10 +189,10 @@ export const updateUserById = async (req, res) => {
     const validatedData = UserSchema.partial().parse(req.body);
 
     if (validatedData.password) {
-      validatedData.password = await SecurityUtils.hashPassword(validatedData.password);
+      validatedData.password = await HashingUtils.hashPassword(validatedData.password);
     }
 
-    const user = await userRepository.updateById(id, validatedData);
+    const user = await UserRepository.updateById(id, validatedData);
 
     if (!user) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
 
@@ -224,7 +224,7 @@ export const deleteUserById = async (req, res) => {
       });
     }
 
-    const deleted = await userRepository.deleteById(id);
+    const deleted = await UserRepository.deleteById(id);
     if (!deleted) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
 
     return res.status(200).json({ message: "User deleted successfully" });

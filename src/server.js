@@ -1,8 +1,8 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
-import app from '../app/app.js';
-import MongoDBConnection from '../connections/MongoDBConnection.js';
+import app from './app/app.js';
+import MongoDBConnection from './connections/mongodb.connection.js';
 
 if (process.env.NODE_ENV !== 'production') {
   const __filename = fileURLToPath(import.meta.url);

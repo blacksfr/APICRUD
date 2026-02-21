@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import app from '../app/app.js';
-import MongoDBConnection from '../connections/MongoDBConnection.js';
+import app from '../src/app/app.js';
+import MongoDBConnection from '../src/connections/mongodb.connection.js';
 
 describe('Enterprise Security & Vulnerability Test Suite', () => {
     let userAToken, userBToken, userAId, userBId;

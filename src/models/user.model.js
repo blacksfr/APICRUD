@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { calculateEntropy } from '../utils/PasswordSecurity.js';
+import { calculateEntropy } from '../utils/password.security.util.js';
 
 const USERNAME_LIMITS = { min: 6, max: 20 };
 const PASSWORD_LIMITS = { min: 10, max: 128 };

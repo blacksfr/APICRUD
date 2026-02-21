@@ -1,7 +1,7 @@
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { login, refresh, logout, registerUser, getUserById, updateUserById, deleteUserById } from '../controllers/UserController.js';
-import { authenticateToken } from '../middlewares/Auth.js';
+import { login, refresh, logout, registerUser, getUserById, updateUserById, deleteUserById } from '../controllers/user.controller.js';
+import { authenticateToken } from '../middlewares/auth.middleware.js';
 
 const commonConfig = {
   standardHeaders: true,

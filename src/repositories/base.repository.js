@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
-import MongoDBConnection from '../connections/MongoDBConnection.js';
-import { InvalidIDFormatError } from '../errors/ValidationError.js';
+import MongoDBConnection from '../connections/mongodb.connection.js';
+import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
 
 export default class BaseRepository {
   #collection = null;

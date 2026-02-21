@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import timeout from 'connect-timeout';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import router from '../router/UserRouter.js';
+import router from '../router/user.route.js';
 
 const app = express();
 

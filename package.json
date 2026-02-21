@@ -5,12 +5,12 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "deploy": "vercel --prod",
-    "deploy:force": "vercel --prod --force",
-    "test:security": "vitest run --globals"
+  "test": "echo \"Error: no test specified\" && exit 1",
+  "start": "node src/server.js",
+  "dev": "nodemon src/server.js",
+  "deploy": "vercel --prod",
+  "deploy:force": "vercel --prod --force",
+  "test:security": "vitest run --globals --reporter=verbose"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ObjectId } from 'mongodb';
-import { InvalidIDFormatError } from '../errors/ValidationError.js';
+import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
 
 const ObjectIdSchema = z
   .custom(val => val instanceof ObjectId || typeof val === 'string')
@@ -22,7 +22,7 @@ const omitObj = sensitiveFields.reduce((acc, field) => {
   return acc;
 }, {});
 
-export const UserDbOutputSchemaPublic = UserDbOutputSchema
+export const UserDbOutputPublicSchema = UserDbOutputSchema
   .omit(omitObj)
   .transform(({ _id, ...rest }) => ({
     id: _id,
