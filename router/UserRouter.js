@@ -11,7 +11,7 @@ const commonConfig = {
 export const registerLimiter = rateLimit({
   ...commonConfig,
   windowMs: 60 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 3 : 1000000, 
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 3 : 1000000, 
   message: { 
     error: "Too many registration attempts", 
     message: "Please wait 1 hour before trying to create a new account again." 
@@ -21,7 +21,7 @@ export const registerLimiter = rateLimit({
 export const loginLimiter = rateLimit({
   ...commonConfig,
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 5 : 1000000,
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 5 : 1000000,
   skipSuccessfulRequests: true,
   message: { 
     error: "Too many login attempts", 
@@ -32,7 +32,7 @@ export const loginLimiter = rateLimit({
 export const refreshLimiter = rateLimit({
   ...commonConfig,
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 10 : 1000000,
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 10 : 1000000,
   message: { 
     error: "Too many refresh requests", 
     message: "Please wait 15 minutes before trying again." 
@@ -42,7 +42,7 @@ export const refreshLimiter = rateLimit({
 export const logoutLimiter = rateLimit({
   ...commonConfig,
   windowMs: 1 * 60 * 1000, 
-  max: process.env.NODE_ENV === 'production' ? 10 : 1000000,
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 10 : 1000000,
   message: { 
     error: "Too many logout requests", 
     message: "Please wait 1 minute."
@@ -52,7 +52,7 @@ export const logoutLimiter = rateLimit({
 export const userActionLimiter = rateLimit({
   ...commonConfig,
   windowMs: 1 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 50 : 1000000,
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 50 : 1000000,
   message: { 
     error: "Too many requests", 
     message: "You performed many actions per minute. Please wait 1 minute." 

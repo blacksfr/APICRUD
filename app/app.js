@@ -11,7 +11,7 @@ app.set('trust proxy', 1);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 300 : 10000,
+  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 300 : 10000,
   message: {
     error: "TOO_MANY_REQUESTS",
     message: "Please wait 15 minutes before trying again"
