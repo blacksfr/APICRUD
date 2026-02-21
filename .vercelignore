@@ -4,4 +4,5 @@ tests
 .env
 .env.*
 README.md
+server.dev.js
 vitest.config.js

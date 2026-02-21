@@ -5,25 +5,28 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "start": "node src/server.js",
-  "dev": "nodemon src/server.js",
-  "deploy": "vercel --prod",
-  "deploy:force": "vercel --prod --force",
-  "test:security": "vitest run --globals --reporter=verbose"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/server.dev.js",
+    "dev": "nodemon src/server.dev.js",
+    "deploy": "vercel --prod",
+    "deploy:force": "vercel --prod --force",
+    "test:security": "vitest run --globals --reporter=verbose"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bcrypt": "^6.0.0",
+    "argon2": "^0.44.0",
     "connect-timeout": "^1.9.1",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "csurf": "^1.11.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "lusca": "^1.7.0",
     "mongodb": "^7.1.0",
     "zod": "^4.3.6"
   },
@@ -33,7 +36,7 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-  "minimatch": "^10.2.1",
-  "glob": "^11.0.0"
-}
+    "minimatch": "^10.2.1",
+    "glob": "^11.0.0"
+  }
 }

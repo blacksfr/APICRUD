@@ -1,9 +1,4 @@
-import bcrypt from 'bcrypt';
-import { createHash } from 'node:crypto';
-
-const preHash = (password) => {
-    return createHash('sha256').update(password).digest('hex');
-};
+import argon2 from 'argon2';
 
 export const HashingUtils = {
 
@@ -12,11 +7,14 @@ export const HashingUtils = {
             throw new Error("Invalid password format for hashing");
         }
         try {
-            const passwordToHash = preHash(password);
-            const saltRounds = 12;
-            return await bcrypt.hash(passwordToHash, saltRounds);
+            return await argon2.hash(password, {
+                type: argon2.argon2id,
+                memoryCost: 2 ** 16,
+                timeCost: 3,
+                parallelism: 1
+            });
         } catch (error) {
-            console.error("Bcrypt Hash Error:", error);
+            console.error("Argon2 Hash Error:", error);
             throw error;
         }
     },
@@ -26,15 +24,10 @@ export const HashingUtils = {
             console.warn("[SECURITY_WARN]: Invalid password or hash format for comparison.");
             return false;
         }
-
-        if (!hash.startsWith('$2')) {
-            return false;
-        }
         try {
-            const passwordToCompare = preHash(password);
-            return await bcrypt.compare(passwordToCompare, hash);
+            return await argon2.verify(hash, password);
         } catch (error) {
-            console.error("Bcrypt Compare Error:", error);
+            console.error("Argon2 Compare Error:", error);
             return false;
         }
     }

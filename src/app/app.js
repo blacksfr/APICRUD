@@ -3,15 +3,21 @@ import helmet from 'helmet';
 import timeout from 'connect-timeout';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import cors from 'cors';
+import lusca from 'lusca';
+import csrf from 'csurf';
 import router from '../router/user.route.js';
 
 const app = express();
+
+const isProd = process.env.NODE_ENV === 'production';
+const isTest = process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
 
 app.set('trust proxy', 1);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test' ? 300 : 10000,
+  max: isProd || isTest ? 300 : 1000,
   message: {
     error: "TOO_MANY_REQUESTS",
     message: "Please wait 15 minutes before trying again"
@@ -20,11 +26,74 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(helmet());
+const csrfProtection = csrf({
+  cookie: {
+    key: '_csrf',
+    path: '/',
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'Lax', 
+    signed: true
+  }
+});
+
+const whitelist = isProd 
+  ? ['https://api-crud-blacksfritching.vercel.app'] 
+  : [`http://localhost:${process.env.PORT || 3000}`, 'http://localhost:5173', 
+      'http://127.0.0.1:5173'];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || whitelist.indexOf(origin) !== -1 || isTest) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  credentials: true,
+  maxAge: 86400
+};
+
 app.use(timeout('30s'));
-app.use(cookieParser(process.env.COOKIE_SECRET));
-app.use(express.json({ limit: '1mb' }));
+app.use(helmet()); 
+app.use(cors(corsOptions));
 app.use(limiter);
+
+app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser(process.env.COOKIE_SECRET));
+
+app.use(lusca({
+  xframe: 'SAMEORIGIN',
+  hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+  xssProtection: true,
+  nosniff: true,
+  referrerPolicy: 'same-origin',
+  csp: {
+    policy: {
+      'default-src': "'self'",
+      'frame-ancestors': "'none'",
+      'connect-src': (isProd 
+      ? ["'self'", "https://api-crud-blacksfritching.vercel.app"] 
+      : ["'self'", "http://localhost:*"]
+    ).join(' ')}
+  }
+}));
+
+app.use(csrfProtection);
+
+app.use((req, res, next) => {
+  if (typeof req.csrfToken === 'function') {
+    const token = req.csrfToken();
+    res.cookie('X-CSRF-Token', token, {
+      httpOnly: false,
+      secure: isProd,
+      sameSite: 'Lax'
+    });
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   if (!req.timedout) next();
@@ -40,6 +109,13 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (err.code === 'EBADCSRFTOKEN') {
+    return res.status(403).json({
+      error: "FORBIDDEN",
+      message: "Form tampered with or invalid CSRF token"
+    });
+  }
+
   if (err.timeout || req.timedout) {
     return res.status(503).json({ 
       error: "SERVICE_UNAVAILABLE", 
@@ -55,9 +131,12 @@ app.use((err, req, res, next) => {
   }
 
   console.error(`[SERVER_ERROR]: ${err.message}`);
-  if (process.env.NODE_ENV !== 'production') console.error(err.stack);
+  if (!isProd) console.error(err.stack);
 
-  res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
+  res.status(500).json({ 
+    error: "INTERNAL_SERVER_ERROR", 
+    message: "An unexpected error occurred" 
+  });
 });
 
 export default app;

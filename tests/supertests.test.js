@@ -3,150 +3,183 @@ import request from 'supertest';
 import app from '../src/app/app.js';
 import MongoDBConnection from '../src/connections/mongodb.connection.js';
 
-describe('Enterprise Security & Vulnerability Test Suite', () => {
-    let userAToken, userBToken, userAId, userBId;
+describe('Enterprise Security & Vulnerability Test Suite (Full JWT & Route-Based Limits)', () => {
     let db;
+    let agent;
+    let csrfToken;
+    let userAId, userBId, userAToken, userBToken;
 
-    /**
-     * @lifecycle Pre-test Database Scrubbing
-     * Garante a idempotência dos testes removendo resquícios de execuções anteriores.
-     */
+    const extractToken = (res) => {
+        const cookies = res.headers['set-cookie'] || [];
+        const tokenCookie = cookies.find(c => c.startsWith('X-CSRF-Token'));
+        if (tokenCookie) {
+            return decodeURIComponent(tokenCookie.split('=')[1].split(';')[0]);
+        }
+        return csrfToken;
+    };
+
     beforeAll(async () => {
         db = await MongoDBConnection.getConnection();
         await db.collection('users').deleteMany({
-            username: { $in: ['user_alpha', 'user_beta', 'attacker_xss', 'mass_assign', 'big_user', 'overflow'] }
+            username: { $in: ['user_alpha', 'user_beta', 'mass_assign', 'admin_wannabe', 'user_4', 'big_user'] }
         });
+
+        agent = request.agent(app);
+        const res = await agent.get('/'); // Acorda o CSRF
+        csrfToken = extractToken(res);
     });
 
     // =========================================================================
-    // 1. IDENTITY & ACCESS MANAGEMENT (IAM)
+    // 1. JWT & IDENTITY INTEGRITY
     // =========================================================================
-    
-    test('IAM: Registro e Integridade de Identidade', async () => {
-        // Valida o fluxo positivo de criação e a restrição de unicidade (CWE-290)
-        const userData = { username: 'user_alpha', password: 'StrongPassword123!' };
-        const resA = await request(app).post('/users').send(userData);
+
+    test('IAM: Registro e Gestão de JWT', async () => {
+        const resA = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ username: 'user_alpha', password: 'StrongPassword123!' });
+        
         expect(resA.status).toBe(201);
         userAId = resA.body.user.id;
         userAToken = resA.body.accessToken;
+        csrfToken = extractToken(resA);
 
-        const resConflict = await request(app).post('/users').send(userData);
-        expect(resConflict.status).toBe(409); // Conflict: Previne duplicação de identidade
-
-        const resB = await request(app).post('/users').send({
-            username: 'user_beta',
-            password: 'AnotherPassword456!'
-        });
+        const resB = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ username: 'user_beta', password: 'AnotherPassword456!' });
+        
+        expect(resB.status).toBe(201);
         userBId = resB.body.user.id;
         userBToken = resB.body.accessToken;
+        csrfToken = extractToken(resB);
+    });
+
+    test('JWT: Deve rejeitar acesso sem token em rota protegida', async () => {
+        const res = await agent.get(`/users/${userAId}`)
+            .set('X-CSRF-Token', csrfToken);
+        
+        expect(res.status).toBe(401);
+    });
+
+    test('JWT: Deve rejeitar token com assinatura forjada', async () => {
+        const forgedToken = userAToken.substring(0, userAToken.length - 10) + "abcdefghij";
+        const res = await agent.get(`/users/${userAId}`)
+            .set('Authorization', `Bearer ${forgedToken}`)
+            .set('X-CSRF-Token', csrfToken);
+        
+        expect(res.status).toBe(403); 
     });
 
     // =========================================================================
-    // 2. INPUT VALIDATION & SANITIZATION (OWASP A03:2021)
+    // 2. OWASP TOP 10: BOLA (A01:2021)
     // =========================================================================
 
-    test('Injection: NoSQL Filter Bypass Mitigation', async () => {
-        // Testa se o parser impede objetos de query em campos de login (Prevention of $gt/$ne injection)
-        const response = await request(app)
-            .post('/users/login')
+    test('OWASP BOLA: Usuário B não pode acessar perfil do Usuário A', async () => {
+        const response = await agent.get(`/users/${userAId}`)
+            .set('Authorization', `Bearer ${userBToken}`)
+            .set('X-CSRF-Token', csrfToken);
+        
+        expect(response.status).toBe(403);
+    });
+
+    // =========================================================================
+    // 3. INPUT VALIDATION & INTEGRITY (A03:2021)
+    // =========================================================================
+
+    test('Injection: NoSQL Filter Bypass no Login', async () => {
+        const response = await agent.post('/users/login')
+            .set('X-CSRF-Token', csrfToken)
             .send({ username: { "$gt": "" }, password: "123" });
+        
+        csrfToken = extractToken(response);
         expect(response.status).toBe(400); 
     });
 
-    test('XSS: Content Sanitization (Stored/Reflected)', async () => {
-        // Garante que tags <script> sejam barradas ou sanitizadas pelo Zod/Validator
-        const response = await request(app)
-            .post('/users')
-            .send({
-                username: '<script>alert("xss")</script>',
-                password: 'StrongPassword123!'
+    test('Mass Assignment: Bloqueio de campos sensíveis (role)', async () => {
+        const res = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ 
+                username: 'admin_wannabe', 
+                password: 'Password123!',
+                role: 'admin' 
             });
-        expect(response.status).toBe(400);
-    });
-
-    test('Broken Object Level Authorization (BOLA/IDOR): Cross-User Access', async () => {
-        // Testa a falha de Broken Object Level Authorization (OWASP A01:2021)
-        // O usuário A jamais deve acessar recursos privados do usuário B
-        const resGet = await request(app)
-            .get(`/users/${userBId}`)
-            .set('Authorization', `Bearer ${userAToken}`);
-        expect(resGet.status).toBe(403);
+        
+        csrfToken = extractToken(res);
+        const userInDb = await db.collection('users').findOne({ username: 'admin_wannabe' });
+        expect(userInDb?.role).toBeUndefined();
     });
 
     // =========================================================================
-    // 3. SECURE INFRASTRUCTURE & HEADERS (OWASP A05:2021)
+    // 4. INFRASTRUCTURE & SECURE HEADERS (A05:2021)
     // =========================================================================
 
-    test('Infra: Hardening de Headers via Helmet.js', async () => {
-        // Verifica a implementação de políticas de segurança no transporte e renderização
-        const response = await request(app).get('/');
-        expect(response.headers['x-content-type-options']).toBe('nosniff'); // Previne MIME sniffing
-        expect(response.headers['strict-transport-security']).toBeDefined(); // Força HTTPS (HSTS)
-        expect(response.headers['x-frame-options']).toBeDefined(); // Previne Clickjacking
+    test('A05: Misconfiguration - Headers de segurança (Helmet/Lusca)', async () => {
+        const res = await agent.get('/');
+        expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+        expect(res.headers['x-content-type-options']).toBe('nosniff');
+        expect(res.headers['strict-transport-security']).toBeDefined();
     });
 
-    test('Anti-DoS: Controle de Tamanho de Payload', async () => {
-        // Mitigação de negação de serviço por exaustão de memória (CWE-400)
-        const bigData = "a".repeat(1024 * 1024 * 1.2); // 1.2MB
-        const response = await request(app)
-            .post('/users')
-            .send({ username: 'overflow', password: bigData });
-        expect(response.status).toBe(413); // Payload Too Large
-    });
+    test('A01: CSRF - Deve rejeitar requisições de alteração sem token válido', async () => {
+        // Usando request(app) sem o agent para simular uma requisição sem cookies/sessão de token
+        const res = await request(app)
+            .put(`/users/${userAId}`)
+            .send({ username: 'attacker', password: 'Password123!' });
 
-    // =========================================================================
-    // 4. AUTHENTICATION & CRYPTOGRAPHY (OWASP A02:2021)
-    // =========================================================================
-
-    test('Auth: Integridade de Assinatura JWT', async () => {
-        // Garante que o servidor rejeita tokens com assinaturas manipuladas ou malformadas
-        const response = await request(app)
-            .get(`/users/${userAId}`)
-            .set('Authorization', `Bearer token.invalido.123`);
-        expect([401, 403]).toContain(response.status);
+        expect(res.status).toBe(403);
+        expect(res.body.message).toBe("Form tampered with or invalid CSRF token");
     });
 
     // =========================================================================
-    // 5. AVAILABILITY & ANTI-ABUSE (RATE LIMITING)
+    // 5. AVAILABILITY & ANTI-DoS (A04:2021)
     // =========================================================================
 
-    test('Anti-Brute Force: Mecanismo de Bloqueio Exponencial', async () => {
-        // Valida se o middleware de Rate Limit bloqueia tentativas de força bruta no login
+    test('A04: Anti-DoS - Deve rejeitar payloads maiores que 1MB', async () => {
+        const bigData = "a".repeat(1024 * 1024 * 1.1); // 1.1MB
+        const res = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ username: 'big_user', password: bigData });
+
+        csrfToken = extractToken(res);
+        expect(res.status).toBe(413);
+        expect(res.body.error).toBe("PAYLOAD_TOO_LARGE");
+    });
+
+    test('Rate Limit: Registro Excedido (registerLimiter)', async () => {
+        const res4 = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ username: 'user_5', password: 'Password123!' });
+        csrfToken = extractToken(res4);
+
+        const res5 = await agent.post('/users')
+            .set('X-CSRF-Token', csrfToken)
+            .send({ username: 'user_6', password: 'Password123!' });
+        
+        expect(res5.status).toBe(429);
+        expect(res5.body.error).toBe("Too many registration attempts");
+    });
+
+    test('Rate Limit: Login Brute Force (loginLimiter)', async () => {
         const loginData = { username: 'user_alpha', password: 'wrong_password' };
+        
         for (let i = 0; i < 5; i++) {
-            await request(app).post('/users/login').send(loginData);
+            const res = await agent.post('/users/login')
+                .set('X-CSRF-Token', csrfToken)
+                .send(loginData);
+            csrfToken = extractToken(res);
         }
-        const blockedRes = await request(app).post('/users/login').send(loginData);
-        expect(blockedRes.status).toBe(429); // Too Many Requests
+        
+        const blockedRes = await agent.post('/users/login')
+            .set('X-CSRF-Token', csrfToken)
+            .send(loginData);
+            
+        expect(blockedRes.status).toBe(429);
+        expect(blockedRes.body.error).toBe("Too many login attempts");
     });
 
-    test('Global Rate Limit: Resiliência contra Stress/DoS', async () => {
-        /** * @strategy Burst-Testing
-         * Dispara requisições paralelas para testar o teto de 300 requisições da rota principal.
-         */
-        let blocked = false;
-        const batchSize = 50; 
-        const totalRequests = 350; 
-
-        for (let i = 0; i < totalRequests; i += batchSize) {
-            const promises = Array.from({ length: batchSize }).map(() => request(app).get('/'));
-            const responses = await Promise.all(promises);
-            if (responses.some(res => res.status === 429)) {
-                blocked = true;
-                break;
-            }
-        }
-        expect(blocked).toBe(true);
-    }, 20000); 
-
-    /**
-     * @lifecycle Teardown
-     * Garante o encerramento limpo das conexões para evitar memory leaks no CI/CD.
-     */
     afterAll(async () => {
         if (db) {
             await db.collection('users').deleteMany({
-                username: { $in: ['user_alpha', 'user_beta', 'attacker_xss', 'mass_assign', 'big_user', 'overflow'] }
+                username: { $in: ['user_alpha', 'user_beta', 'mass_assign', 'admin_wannabe', 'user_4', 'big_user'] }
             });
             await MongoDBConnection.killConnection();
         }

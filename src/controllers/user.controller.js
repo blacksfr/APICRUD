@@ -6,6 +6,17 @@ import { HashingUtils } from '../utils/hashing.util.js';
 import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
 import { UserDbOutputPublicSchema } from '../models/database.model.js';
 
+const isProd = process.env.NODE_ENV === 'production';
+
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? 'Strict' : 'Lax',
+  path: '/',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  signed: true
+};
+
 export const login = async (req, res) => {
   try {
     const { username, password } = LoginSchema.parse(req.body);
@@ -14,7 +25,9 @@ export const login = async (req, res) => {
     if (!user || !(await HashingUtils.comparePassword(password, user.password))) {
       return res.status(401).json({ error: "UNAUTHORIZED", message: "Invalid username or password" });
     }
+    
     const sanitizedUser = UserDbOutputPublicSchema.parse(user);
+    
     const accessToken = jwt.sign(
       { id: sanitizedUser.id, username: sanitizedUser.username },
       process.env.JWT_SECRET,
@@ -27,13 +40,7 @@ export const login = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
 
     return res.status(200).json({
       message: "Login Successful",
@@ -53,7 +60,7 @@ export const login = async (req, res) => {
 
 export const refresh = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = req.signedCookies.refreshToken;
     if (!refreshToken) return res.status(401).json({ error: "UNAUTHORIZED", message: "Refresh token missing" });
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
@@ -70,13 +77,7 @@ export const refresh = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', newRefreshToken, REFRESH_COOKIE_OPTIONS);
 
     return res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
@@ -85,12 +86,8 @@ export const refresh = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
-    path: '/'
-  });
+  const { maxAge, ...clearOptions } = REFRESH_COOKIE_OPTIONS;
+  res.clearCookie('refreshToken', clearOptions);
 
   return res.status(200).json({ message: "Logout successful" });
 };
@@ -109,7 +106,6 @@ export const registerUser = async (req, res) => {
       password: hashedPassword
     });
 
-    // Cria tokens
     const accessToken = jwt.sign(
       { id: newUser.id, username: newUser.username },
       process.env.JWT_SECRET,
@@ -122,13 +118,7 @@ export const registerUser = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
 
     return res.status(201).json({
       message: "User created and logged in successfully",
@@ -168,7 +158,8 @@ export const getUserById = async (req, res) => {
       message: "Invalid input format",
       details: error.errors
     });
-    if (error.name === 'InvalidIDFormatError' || error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    
     console.error("[GET_USER_BY_ID_ERROR]:", error.message);
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
   }
@@ -206,7 +197,8 @@ export const updateUserById = async (req, res) => {
       message: "Invalid input format",
       details: error.errors
     });
-    if (error.name === 'InvalidIDFormatError' || error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    
     console.error("[UPDATE_USER_BY_ID_ERROR]:", error.message);
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
   }
@@ -234,7 +226,8 @@ export const deleteUserById = async (req, res) => {
       message: "Invalid input format",
       details: error.errors
     });
-    if (error.name === 'InvalidIDFormatError' || error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
+    
     console.error("[DELETE_USER_BY_ID_ERROR]:", error.message);
     return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
   }
