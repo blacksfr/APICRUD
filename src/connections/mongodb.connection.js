@@ -1,4 +1,5 @@
 import { MongoClient, ServerApiVersion } from "mongodb";
+import { MONGO_URI, DB_NAME } from "../config/env.js";
 
 export default class MongoDBConnection {
   static #client = null;
@@ -18,7 +19,7 @@ export default class MongoDBConnection {
   };
 
   static async getConnection(dbName = null) {
-    const targetDb = dbName || process.env.DB_NAME;
+    const targetDb = dbName || DB_NAME;
 
     if (this.#client && this.#dbCache.has(targetDb)) {
       return this.#dbCache.get(targetDb);
@@ -29,26 +30,22 @@ export default class MongoDBConnection {
       return this.#getAndCacheDb(targetDb);
     }
 
-    
-
     this.#connectionPromise = (async () => {
-      let tempClient = null;
       try {
-        tempClient = new MongoClient(process.env.MONGO_DB_KEY, this.#options);
-        
+        const tempClient = new MongoClient(MONGO_URI, this.#options);
+
         tempClient.on('error', (err) => {
-            console.error("[MongoDB] Runtime Error:", err.message);
-            this.#reset(); 
+          console.error("[MongoDB] Runtime Error:", err.message);
+          this.#reset();
         });
+
         tempClient.on('close', () => this.#reset());
 
         await tempClient.connect();
-        
         await tempClient.db(targetDb).command({ ping: 1 });
 
         this.#client = tempClient;
         console.log(`[MongoDB] New Connection Established for [${targetDb}].`);
-        return this.#client;
       } catch (err) {
         this.#reset();
         console.error("[MongoDB] Connection Error:", err.message);
@@ -59,6 +56,7 @@ export default class MongoDBConnection {
     })();
 
     await this.#connectionPromise;
+    if (!this.#client) throw new Error("[MongoDB] Failed to establish connection.");
     return this.#getAndCacheDb(targetDb);
   }
 

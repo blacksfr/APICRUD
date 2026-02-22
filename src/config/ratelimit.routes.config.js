@@ -1,10 +1,5 @@
-import express from 'express';
-import { rateLimit } from 'express-rate-limit';
-import { login, refresh, logout, registerUser, getUserById, updateUserById, deleteUserById } from '../controllers/user.controller.js';
-import { authenticateToken } from '../middlewares/auth.middleware.js';
-
-const isProd = process.env.NODE_ENV === 'production';
-const isTest = process.env.NODE_ENV === 'test';
+import rateLimit from 'express-rate-limit';
+import { isProd, isTest } from './env.js';
 
 const commonConfig = {
   standardHeaders: true,
@@ -67,21 +62,3 @@ export const userActionLimiter = rateLimit({
     message: "You performed many actions per minute. Please wait 1 minute." 
   }
 });
-
-const router = express.Router();
-
-router.get('/', (req, res) => {
-  res.status(200).json({ status: 'Server is running'});
-});
-
-router.post('/users', registerLimiter, registerUser);
-router.post('/users/login', loginLimiter, login);
-router.post('/users/refresh', refreshLimiter, refresh);
-
-router.post('/users/logout', logoutLimiter, authenticateToken, logout);
-
-router.get('/users/:id', userActionLimiter, authenticateToken, getUserById);
-router.put('/users/:id', userActionLimiter, authenticateToken, updateUserById);
-router.delete('/users/:id', userActionLimiter, authenticateToken, deleteUserById);
-
-export default router;

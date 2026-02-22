@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ObjectId } from 'mongodb';
-import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
+import InvalidIDFormatError from '../errors/validation.error.js';
 
 const ObjectIdSchema = z
   .custom(val => val instanceof ObjectId || typeof val === 'string')

@@ -1,24 +1,21 @@
 import { ObjectId } from 'mongodb';
 import MongoDBConnection from '../connections/mongodb.connection.js';
-import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
+import InvalidIDFormatError from '../errors/validation.error.js';
 
 export default class BaseRepository {
-  #collection = null;
   #outputSchema = null;
   #outputSchemaPublic = null;
 
   constructor(collectionName, outputSchema, outputSchemaPublic, dbName = null) {
     this.collectionName = collectionName;
-    this.#outputSchema = outputSchema;        
-    this.#outputSchemaPublic = outputSchemaPublic; 
+    this.#outputSchema = outputSchema;
+    this.#outputSchemaPublic = outputSchemaPublic;
     this.dbName = dbName;
   }
 
   async #getCollection() {
-    if (this.#collection) return this.#collection;
     const db = await MongoDBConnection.getConnection(this.dbName);
-    this.#collection = db.collection(this.collectionName);
-    return this.#collection;
+    return db.collection(this.collectionName);
   }
 
   #sanitizePublic(doc) {
@@ -27,7 +24,7 @@ export default class BaseRepository {
       return this.#outputSchemaPublic.parse(doc);
     } catch (error) {
       console.error('Sanitization Output DB Error:', error);
-      throw new Error("xxx INTERNAL_SERVER_ERROR xxx");
+      throw new Error('INTERNAL_SERVER_ERROR');
     }
   }
 
@@ -38,7 +35,6 @@ export default class BaseRepository {
 
   async create(data) {
     const col = await this.#getCollection();
-
     const { _id, isDeleted, createdAt, updatedAt, deletedAt, ...cleanData } = data;
 
     const doc = {
@@ -57,15 +53,21 @@ export default class BaseRepository {
 
     const col = await this.#getCollection();
     const doc = await col.findOne(
-      { _id: new ObjectId(id), isDeleted: { $ne: true } }
+      { _id: new ObjectId(id), isDeleted: { $ne: true } },
+      { projection: { password: 0 } }
     );
     return this.#sanitizePublic(doc);
   }
 
   async findOne(filter) {
+    const safeFilter = Object.fromEntries(
+      Object.entries(filter).filter(([_, v]) => typeof v === 'string' || typeof v === 'boolean')
+    );
+
     const col = await this.#getCollection();
     const doc = await col.findOne(
-      { ...filter, isDeleted: { $ne: true } }
+      { ...safeFilter, isDeleted: { $ne: true } },
+      { projection: { password: 0 } }
     );
     return this.#sanitizePublic(doc);
   }
@@ -84,7 +86,7 @@ export default class BaseRepository {
           updatedAt: new Date(),
         }
       },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', projection: { password: 0 } }
     );
     return this.#sanitizePublic(result);
   }
@@ -92,7 +94,6 @@ export default class BaseRepository {
   async deleteById(id) {
     if (!ObjectId.isValid(id)) throw new InvalidIDFormatError();
     const col = await this.#getCollection();
-
     const result = await col.updateOne(
       { _id: new ObjectId(id), isDeleted: { $ne: true } },
       {
@@ -111,5 +112,13 @@ export default class BaseRepository {
     const doc = await col.findOne({ ...filter, isDeleted: { $ne: true } });
     return this.#sanitizeInternal(doc);
   }
-}
 
+  async exists(filter) {
+    const col = await this.#getCollection();
+    const count = await col.countDocuments(
+      { ...filter, isDeleted: { $ne: true } },
+      { limit: 1 }
+    );
+    return count > 0;
+  }
+}

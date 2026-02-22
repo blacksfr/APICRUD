@@ -3,10 +3,10 @@ import UserRepository from '../repositories/user.repository.js';
 import { UserSchema, LoginSchema } from '../models/user.model.js';
 import { MongoIdSchema } from '../models/database.model.js';
 import { HashingUtils } from '../utils/hashing.util.js';
-import { InvalidIDFormatError } from '../middlewares/errors/validation.error.js';
 import { UserDbOutputPublicSchema } from '../models/database.model.js';
-
-const isProd = process.env.NODE_ENV === 'production';
+import { isProd, JWT_SECRET, JWT_REFRESH_SECRET } from '../config/env.js';
+import asyncHandler from '../middlewares/async.handler.middleware.js';
+import { ok, created, unauthorized, forbidden, notFound, conflict } from '../utils/response.util.js';
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -17,218 +17,134 @@ const REFRESH_COOKIE_OPTIONS = {
   signed: true
 };
 
-export const login = async (req, res) => {
-  try {
-    const { username, password } = LoginSchema.parse(req.body);
-    const user = await UserRepository.findForLogin({ username });
-
-    if (!user || !(await HashingUtils.comparePassword(password, user.password))) {
-      return res.status(401).json({ error: "UNAUTHORIZED", message: "Invalid username or password" });
-    }
-    
-    const sanitizedUser = UserDbOutputPublicSchema.parse(user);
-    
-    const accessToken = jwt.sign(
-      { id: sanitizedUser.id, username: sanitizedUser.username },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
-
-    const refreshToken = jwt.sign(
-      { id: sanitizedUser.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
-
-    return res.status(200).json({
-      message: "Login Successful",
-      accessToken,
-      user: sanitizedUser
-    });
-  } catch (error) {
-    if (error.name === 'ZodError' || error.errors) return res.status(400).json({
-      error: "BAD_REQUEST",
-      message: "Invalid input format",
-      details: error.errors
-    });
-    console.error("[LOGIN_ERROR]:", error.message);
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
-  }
-};
-
-export const refresh = async (req, res) => {
-  try {
-    const refreshToken = req.signedCookies.refreshToken;
-    if (!refreshToken) return res.status(401).json({ error: "UNAUTHORIZED", message: "Refresh token missing" });
-
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-
-    const newAccessToken = jwt.sign(
-      { id: decoded.id },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
-
-    const newRefreshToken = jwt.sign(
-      { id: decoded.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('refreshToken', newRefreshToken, REFRESH_COOKIE_OPTIONS);
-
-    return res.status(200).json({ accessToken: newAccessToken });
-  } catch (error) {
-    return res.status(403).json({ error: "FORBIDDEN", message: "Invalid or expired refresh token" });
-  }
-};
-
-export const logout = async (req, res) => {
+const clearRefreshCookie = (res) => {
   const { maxAge, ...clearOptions } = REFRESH_COOKIE_OPTIONS;
   res.clearCookie('refreshToken', clearOptions);
-
-  return res.status(200).json({ message: "Logout successful" });
 };
 
-export const registerUser = async (req, res) => {
-  try {
-    const validatedData = UserSchema.parse(req.body);
+const createNewJWT = (payload, SECRET, expiresIn) => {
+  return jwt.sign(payload, SECRET, { expiresIn });
+};
 
-    const existingUser = await UserRepository.findOne({ username: validatedData.username });
-    if (existingUser) return res.status(409).json({ error: "CONFLICT", message: "This username is already taken" });
+export const login = asyncHandler(async (req, res) => {
+  const { username, password } = LoginSchema.parse(req.body);
+  const user = await UserRepository.findForLogin({ username });
 
-    const hashedPassword = await HashingUtils.hashPassword(validatedData.password);
-
-    const newUser = await UserRepository.create({
-      username: validatedData.username,
-      password: hashedPassword
-    });
-
-    const accessToken = jwt.sign(
-      { id: newUser.id, username: newUser.username },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
-
-    const refreshToken = jwt.sign(
-      { id: newUser.id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
-
-    return res.status(201).json({
-      message: "User created and logged in successfully",
-      accessToken,
-      user: newUser
-    });
-  } catch (error) {
-    if (error.name === 'ZodError' || error.errors) return res.status(400).json({
-      error: "BAD_REQUEST",
-      message: "Invalid input format",
-      details: error.errors
-    });
-    console.error("[REGISTER_USER_ERROR]:", error.message);
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
+  if (!user || !(await HashingUtils.comparePassword(password, user.password))) {
+    return unauthorized(res, 'Invalid username or password');
   }
-};
 
-export const getUserById = async (req, res) => {
-  try {
-    const { id } = MongoIdSchema.parse(req.params);
-    const authenticatedUserId = req.user.id;
+  const sanitizedUser = UserDbOutputPublicSchema.parse(user);
+  const { id: sanitizedId, username: sanitizedUsername } = sanitizedUser;
 
-    if (id !== authenticatedUserId) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Access denied. You are only authorized to manage your own profile"
-      });
-    }
+  const accessToken  = createNewJWT({ id: sanitizedId, username: sanitizedUsername }, JWT_SECRET, '15m');
+  const refreshToken = createNewJWT({ id: sanitizedId }, JWT_REFRESH_SECRET, '7d');
 
-    const user = await UserRepository.findById(id);
-    if (!user) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
+  res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
 
-    return res.status(200).json({ message: "User retrieved successfully", user });
-  } catch (error) {
-    if (error.name === 'ZodError' || error.errors) return res.status(400).json({
-      error: "BAD_REQUEST",
-      message: "Invalid input format",
-      details: error.errors
-    });
-    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
-    
-    console.error("[GET_USER_BY_ID_ERROR]:", error.message);
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
+  return ok(res, 'Login Successful', { accessToken, user: sanitizedUser });
+});
+
+export const refresh = asyncHandler(async (req, res) => {
+  const refreshToken = req.signedCookies.refreshToken;
+  if (!refreshToken) {
+    return unauthorized(res, 'Refresh token missing');
   }
-};
 
-export const updateUserById = async (req, res) => {
-  try {
-    const { id } = MongoIdSchema.parse(req.params);
-    const authenticatedUserId = req.user.id;
+  const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
 
-    if (id !== authenticatedUserId) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Access denied. You are only authorized to manage your own profile"
-      });
-    }
-
-    const validatedData = UserSchema.partial().parse(req.body);
-
-    if (validatedData.password) {
-      validatedData.password = await HashingUtils.hashPassword(validatedData.password);
-    }
-
-    const user = await UserRepository.updateById(id, validatedData);
-
-    if (!user) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
-
-    return res.status(200).json({
-      message: "User updated successfully",
-      user
-    });
-  } catch (error) {
-    if (error.name === 'ZodError' || error.errors) return res.status(400).json({
-      error: "BAD_REQUEST",
-      message: "Invalid input format",
-      details: error.errors
-    });
-    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
-    
-    console.error("[UPDATE_USER_BY_ID_ERROR]:", error.message);
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
+  const user = await UserRepository.findById(decoded.id);
+  if (!user) {
+    return unauthorized(res, 'User no longer exists');
   }
-};
+  const { id: userId, username: userUsername } = user;
 
-export const deleteUserById = async (req, res) => {
-  try {
-    const { id } = MongoIdSchema.parse(req.params);
-    const authenticatedUserId = req.user.id;
+  const newAccessToken  = createNewJWT({ id: userId, username: userUsername }, JWT_SECRET, '15m');
+  const newRefreshToken = createNewJWT({ id: userId }, JWT_REFRESH_SECRET, '7d');
 
-    if (id !== authenticatedUserId) {
-      return res.status(403).json({
-        error: "FORBIDDEN",
-        message: "Access denied. You are only authorized to manage your own profile"
-      });
-    }
+  res.cookie('refreshToken', newRefreshToken, REFRESH_COOKIE_OPTIONS);
 
-    const deleted = await UserRepository.deleteById(id);
-    if (!deleted) return res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
+  return ok(res, null, { accessToken: newAccessToken });
+});
 
-    return res.status(200).json({ message: "User deleted successfully" });
-  } catch (error) {
-    if (error.name === 'ZodError' || error.errors) return res.status(400).json({
-      error: "BAD_REQUEST",
-      message: "Invalid input format",
-      details: error.errors
-    });
-    if (error instanceof InvalidIDFormatError) return res.status(400).json({ error: "BAD_REQUEST", message: error.message || "Invalid ID format" });
-    
-    console.error("[DELETE_USER_BY_ID_ERROR]:", error.message);
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" });
+export const logout = asyncHandler(async (req, res) => {
+  clearRefreshCookie(res);
+  return ok(res, 'Logout successful');
+});
+
+export const registerUser = asyncHandler(async (req, res) => {
+  const validatedData = UserSchema.parse(req.body);
+
+ const alreadyExists = await UserRepository.exists({ username: validatedData.username });
+  if (alreadyExists) {
+    return conflict(res, 'This username is already taken');
   }
-};
+
+  const hashedPassword = await HashingUtils.hashPassword(validatedData.password);
+
+  const newUser = await UserRepository.create({
+    username: validatedData.username,
+    password: hashedPassword
+  });
+  const { id: newUserId, username: newUserUsername } = newUser;
+
+  const accessToken  = createNewJWT({ id: newUserId, username: newUserUsername }, JWT_SECRET, '15m');
+  const refreshToken = createNewJWT({ id: newUserId }, JWT_REFRESH_SECRET, '7d');
+
+  res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
+
+  return created(res, 'User created and logged in successfully', { accessToken, user: newUser });
+});
+
+export const getUserById = asyncHandler(async (req, res) => {
+  const { id } = MongoIdSchema.parse(req.params);
+
+  if (id !== req.user.id) {
+    return forbidden(res, 'Access denied. You are only authorized to manage your own profile');
+  }
+
+  const user = await UserRepository.findById(id);
+  if (!user) return notFound(res, 'User not found');
+
+  return ok(res, 'User retrieved successfully', { user });
+});
+
+export const updateUserById = asyncHandler(async (req, res) => {
+  const { id } = MongoIdSchema.parse(req.params);
+
+  if (id !== req.user.id) {
+    return forbidden(res, 'Access denied. You are only authorized to manage your own profile');
+  }
+
+  const validatedData = UserSchema.partial().parse(req.body);
+
+  if (validatedData.password) {
+    validatedData.password = await HashingUtils.hashPassword(validatedData.password);
+  }
+
+  const user = await UserRepository.updateById(id, validatedData);
+  if (!user) return notFound(res, 'User not found');
+
+  const { id: userUpdateId, username: userUpdateUsername } = user;
+
+  const accessToken  = createNewJWT({ id: userUpdateId, username: userUpdateUsername }, JWT_SECRET, '15m');
+  const refreshToken = createNewJWT({ id: userUpdateId }, JWT_REFRESH_SECRET, '7d');
+
+  res.cookie('refreshToken', refreshToken, REFRESH_COOKIE_OPTIONS);
+
+  return ok(res, 'User updated successfully', { accessToken, user });
+});
+
+export const deleteUserById = asyncHandler(async (req, res) => {
+  const { id } = MongoIdSchema.parse(req.params);
+
+  if (id !== req.user.id) {
+    return forbidden(res, 'Access denied. You are only authorized to manage your own profile');
+  }
+
+  const deleted = await UserRepository.deleteById(id);
+  if (!deleted) return notFound(res, 'User not found');
+
+  clearRefreshCookie(res);
+  return ok(res, 'User deleted successfully');
+});
