@@ -1,10 +1,41 @@
 import { ObjectId } from 'mongodb';
 import MongoDBConnection from '../connections/mongodb.connection.js';
 import InvalidIDFormatError from '../errors/validation.error.js';
+import DecryptionError from '../errors/decrypt.error.js';
+import EncryptionError from '../errors/encrypt.error.js';
 
+const unwrapZodCause = (error) => {
+  if (error?.issues?.[0]?.input !== undefined) return error;
+  const cause = error?.cause ?? error?.issues?.[0]?.cause;
+  return cause ?? error;
+};
+
+const IMMUTABLE_FIELDS = ['_id', 'isDeleted', 'createdAt', 'updatedAt', 'deletedAt'];
+
+const REDACT_CREDENTIALS = { password: 0 };
+
+const toObjectId = (id) => {
+  if (!ObjectId.isValid(id)) throw new InvalidIDFormatError();
+  return new ObjectId(id);
+};
+
+const sanitizeFilter = (filter) =>
+  Object.fromEntries(
+    Object.entries(filter).filter(([, v]) =>
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean',
+    ),
+  );
+
+const stripImmutable = (data) => {
+  const clean = { ...data };
+  for (const field of IMMUTABLE_FIELDS) delete clean[field];
+  return clean;
+};
 export default class BaseRepository {
-  #outputSchema = null;
-  #outputSchemaPublic = null;
+  #outputSchema;
+  #outputSchemaPublic;
 
   constructor(collectionName, outputSchema, outputSchemaPublic, dbName = null) {
     this.collectionName = collectionName;
@@ -23,101 +54,124 @@ export default class BaseRepository {
     try {
       return this.#outputSchemaPublic.parse(doc);
     } catch (error) {
-      console.error('Sanitization Output DB Error:', error);
+      const cause = unwrapZodCause(error);
+      if (cause instanceof DecryptionError) throw cause;
+      if (cause instanceof EncryptionError) throw cause;
+      console.error('[BaseRepository] Public sanitisation failed:', error);
       throw new Error('INTERNAL_SERVER_ERROR');
     }
   }
 
   #sanitizeInternal(doc) {
     if (!doc) return null;
-    return this.#outputSchema.parse(doc);
+    try {
+      return this.#outputSchema.parse(doc);
+    } catch (error) {
+      const cause = unwrapZodCause(error);
+      if (cause instanceof DecryptionError) throw cause;
+      if (cause instanceof EncryptionError) throw cause;
+      console.error('[BaseRepository] Internal sanitisation failed:', error);
+      throw new Error('INTERNAL_SERVER_ERROR');
+    }
   }
 
   async create(data) {
     const col = await this.#getCollection();
-    const { _id, isDeleted, createdAt, updatedAt, deletedAt, ...cleanData } = data;
 
     const doc = {
-      ...cleanData,
+      ...stripImmutable(data),
       isDeleted: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    const result = await col.insertOne(doc);
-    return this.#sanitizePublic({ _id: result.insertedId, ...doc });
-  }
+    const { insertedId } = await col.insertOne(doc);
 
-  async findById(id) {
-    if (!ObjectId.isValid(id)) throw new InvalidIDFormatError();
-
-    const col = await this.#getCollection();
-    const doc = await col.findOne(
-      { _id: new ObjectId(id), isDeleted: { $ne: true } },
-      { projection: { password: 0 } }
-    );
-    return this.#sanitizePublic(doc);
-  }
-
-  async findOne(filter) {
-    const safeFilter = Object.fromEntries(
-      Object.entries(filter).filter(([_, v]) => typeof v === 'string' || typeof v === 'boolean')
-    );
-
-    const col = await this.#getCollection();
-    const doc = await col.findOne(
-      { ...safeFilter, isDeleted: { $ne: true } },
-      { projection: { password: 0 } }
-    );
-    return this.#sanitizePublic(doc);
+    return this.#sanitizePublic({ _id: insertedId, ...doc });
   }
 
   async updateById(id, data) {
-    if (!ObjectId.isValid(id)) throw new InvalidIDFormatError();
-
     const col = await this.#getCollection();
-    const { _id, isDeleted, createdAt, updatedAt, deletedAt, ...safeData } = data;
 
     const result = await col.findOneAndUpdate(
-      { _id: new ObjectId(id), isDeleted: { $ne: true } },
+      { _id: toObjectId(id), isDeleted: { $ne: true } },
       {
         $set: {
-          ...safeData,
+          ...stripImmutable(data),
           updatedAt: new Date(),
-        }
+        },
       },
-      { returnDocument: 'after', projection: { password: 0 } }
+      { returnDocument: 'after', projection: REDACT_CREDENTIALS },
     );
+
     return this.#sanitizePublic(result);
   }
 
   async deleteById(id) {
-    if (!ObjectId.isValid(id)) throw new InvalidIDFormatError();
     const col = await this.#getCollection();
-    const result = await col.updateOne(
-      { _id: new ObjectId(id), isDeleted: { $ne: true } },
+
+    const { modifiedCount } = await col.updateOne(
+      { _id: toObjectId(id), isDeleted: { $ne: true } },
       {
         $set: {
           isDeleted: true,
           deletedAt: new Date(),
           updatedAt: new Date(),
-        }
-      }
+        },
+      },
     );
-    return result.modifiedCount > 0;
+
+    return modifiedCount > 0;
+  }
+
+  async findById(id) {
+    const col = await this.#getCollection();
+
+    const doc = await col.findOne(
+      { _id: toObjectId(id), isDeleted: { $ne: true } },
+      { projection: REDACT_CREDENTIALS },
+    );
+
+    return this.#sanitizePublic(doc);
+  }
+
+  async findOne(filter) {
+    const col = await this.#getCollection();
+
+    const doc = await col.findOne(
+      { ...sanitizeFilter(filter), isDeleted: { $ne: true } },
+      { projection: REDACT_CREDENTIALS },
+    );
+
+    return this.#sanitizePublic(doc);
   }
 
   async findForLogin(filter) {
     const col = await this.#getCollection();
-    const doc = await col.findOne({ ...filter, isDeleted: { $ne: true } });
+
+    const doc = await col.findOne({
+      ...sanitizeFilter(filter),
+      isDeleted: { $ne: true },
+    });
+
     return this.#sanitizeInternal(doc);
   }
 
   async exists(filter) {
     const col = await this.#getCollection();
+
     const count = await col.countDocuments(
-      { ...filter, isDeleted: { $ne: true } },
-      { limit: 1 }
+      { ...sanitizeFilter(filter), isDeleted: { $ne: true } },
+      { limit: 1 },
+    );
+
+    return count > 0;
+  }
+  async existsById(id) {
+    const col = await this.#getCollection();
+    const count = await col.countDocuments(
+      { _id: toObjectId(id), isDeleted: { $ne: true } },
+      { limit: 1 },
     );
     return count > 0;
   }

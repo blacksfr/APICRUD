@@ -1,45 +1,78 @@
 import { z } from 'zod';
 import { calculateEntropy } from '../utils/password.security.util.js';
+import EncryptionUtils from '../utils/encrypt.util.js';
 
-const USERNAME_LIMITS = { min: 6, max: 20 };
-const PASSWORD_LIMITS = { min: 10, max: 128 };
+const USERNAME_LIMITS  = { min: 6,  max: 20  };
+const PASSWORD_LIMITS  = { min: 10, max: 128 };
+const EMAIL_MAX_LENGTH = 254;
 
-export const UserSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .min(USERNAME_LIMITS.min, `Username must be at least ${USERNAME_LIMITS.min} characters long`)
-    .max(USERNAME_LIMITS.max, `Username cannot exceed ${USERNAME_LIMITS.max} characters`)
-    .toLowerCase()
-    .regex(/^[a-zA-Z0-9._]+$/, "Only letters, numbers, dots, or underscores are allowed")
-    .refine(u => !u.startsWith('.') && !u.endsWith('.'), "Username cannot start or end with a dot")
-    .refine(u => !u.includes('..'), "Username cannot contain consecutive dots"),
+const strictUsername = z
+  .string()
+  .trim()
+  .min(USERNAME_LIMITS.min, `Username must be at least ${USERNAME_LIMITS.min} characters`)
+  .max(USERNAME_LIMITS.max, `Username cannot exceed ${USERNAME_LIMITS.max} characters`)
+  .toLowerCase()
+  .refine((u) => /^[a-zA-Z0-9._]+$/.test(u), {
+    message: 'Username may only contain letters, numbers, dots, or underscores',
+  })
+  .refine((u) => !u.startsWith('.') && !u.endsWith('.'), {
+    message: 'Username cannot start or end with a dot',
+  })
+  .refine((u) => !u.includes('..'), {
+    message: 'Username cannot contain consecutive dots',
+  });
 
-  password: z
-    .string()
-    .min(PASSWORD_LIMITS.min, `Password must be at least ${PASSWORD_LIMITS.min} characters long`)
-    .max(PASSWORD_LIMITS.max, `Password cannot exceed ${PASSWORD_LIMITS.max} characters`)
-    .regex(/^\S+$/, "Password cannot contain spaces")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number")
-    .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character (e.g., @, #, $)")
-    .refine(p => calculateEntropy(p) >= 64, {
-      message: "Password strength is too low. Please use a more complex or longer phrase (min. 64 bits of entropy)"
-    })
-}).strict();
+const strictPassword = z
+  .string()
+  .min(PASSWORD_LIMITS.min, `Password must be at least ${PASSWORD_LIMITS.min} characters`)
+  .max(PASSWORD_LIMITS.max, `Password cannot exceed ${PASSWORD_LIMITS.max} characters`)
+  .refine((p) => /^\S+$/.test(p),        { message: 'Password must not contain spaces' })
+  .refine((p) => /[A-Z]/.test(p),         { message: 'Password must contain at least one uppercase letter' })
+  .refine((p) => /[a-z]/.test(p),         { message: 'Password must contain at least one lowercase letter' })
+  .refine((p) => /[0-9]/.test(p),         { message: 'Password must contain at least one digit' })
+  .refine((p) => /[^a-zA-Z0-9]/.test(p), { message: 'Password must contain at least one special character (e.g. @, #, $)' })
+  .refine((p) => calculateEntropy(p) >= 64, {
+    message: 'Password strength is too low — use a longer or more complex passphrase (min. 64 bits of entropy)',
+  });
 
-export const LoginSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .min(USERNAME_LIMITS.min)
-    .max(USERNAME_LIMITS.max)
-    .regex(/^\S+$/),
+const enterpriseEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(EMAIL_MAX_LENGTH, `Email cannot exceed ${EMAIL_MAX_LENGTH} characters`)
+  .refine((e) => /^\S+$/.test(e), { message: 'Email must not contain spaces' })
+  .pipe(z.email({ message: 'Invalid email address' }))
+  .transform((validEmail) => ({
+    encrypted: EncryptionUtils.encrypt(validEmail),
+    hmac:      EncryptionUtils.hmac(validEmail),
+  }));
 
-  password: z
-    .string()
-    .min(PASSWORD_LIMITS.min)
-    .max(PASSWORD_LIMITS.max)
-    .regex(/^\S+$/)
-}).strict();
+const loginEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(EMAIL_MAX_LENGTH, `Email cannot exceed ${EMAIL_MAX_LENGTH} characters`)
+  .refine((e) => /^\S+$/.test(e), { message: 'Email must not contain spaces' })
+  .pipe(z.email({ message: 'Invalid email address' }))
+  .transform((validEmail) => ({
+    hmac: EncryptionUtils.hmac(validEmail),
+  }));
+
+export const UserSchema = z
+  .object({
+    username: strictUsername,
+    email:    enterpriseEmail,
+    password: strictPassword,
+  })
+  .strict();
+
+export const LoginSchema = z
+  .object({
+    email:    loginEmail, 
+    password: z
+      .string()
+      .min(PASSWORD_LIMITS.min)
+      .max(PASSWORD_LIMITS.max)
+      .refine((p) => /^\S+$/.test(p), { message: 'Password must not contain spaces' }),
+  })
+  .strict();

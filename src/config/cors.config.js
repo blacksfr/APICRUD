@@ -17,7 +17,7 @@ export default {
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token', 'x-refresh-token'],
   credentials: true,
   maxAge: 86400,
 };

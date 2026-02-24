@@ -67,7 +67,7 @@ Create a `.env` file in the project root. **Do not commit or share real secret v
 | MONGO_DB_KEY | MongoDB connection string | `mongodb+srv://user:pass@cluster` |
 | DB_NAME | Database name | `development-api-crud` |
 | COOKIE_SECRET | Secret for signing CSRF cookies | `64-character hex string` |
-| JWT_SECRET | Access token secret | `64-character hex string` |
+| JWT_ACCESS_SECRET | Access token secret | `64-character hex string` |
 | JWT_REFRESH_SECRET | Refresh token secret | `64-character hex string` |
 | NODE_ENV | Environment mode | `development` / `production` |
 | PORT | Server port | `3000` |
@@ -153,7 +153,7 @@ Create a `.env` file in the project root. **Do not commit or share real secret v
 | MONGO_DB_KEY | MongoDB connection string | `mongodb+srv://user:pass@cluster` |
 | DB_NAME | Database name | `development-api-crud` |
 | COOKIE_SECRET | Secret for signing CSRF cookies | `64-character hex string` |
-| JWT_SECRET | Access token secret | `64-character hex string` |
+| JWT_ACCESS_SECRET | Access token secret | `64-character hex string` |
 | JWT_REFRESH_SECRET | Refresh token secret | `64-character hex string` |
 | NODE_ENV | Environment mode | `development` / `production` |
 | PORT | Server port | `3000` |

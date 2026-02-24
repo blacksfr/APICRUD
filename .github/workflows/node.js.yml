@@ -35,7 +35,7 @@ jobs:
       env:
         NODE_ENV: test
         MONGO_DB_KEY: ${{ secrets.MONGO_DB_KEY }}
-        JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
         JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
         COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
         DB_NAME: "test-api-crud"
