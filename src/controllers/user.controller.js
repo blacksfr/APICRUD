@@ -48,7 +48,7 @@ const clearAuthCookies = (res) => {
     signed:   true,
     path:     '/api/v1/auth/refresh',
   });
-}
+};
 
 export const clearAllSessionCookies = (res) => {
 clearSessionCookie(res);
