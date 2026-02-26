@@ -40,7 +40,6 @@ app.use(hpp());
 
 app.use(ensureSessionId);
 
-// lgtm[js/missing-token-validation] - CSRF protection provided by csrf-csrf (doubleCsrfProtection)
 app.use(doubleCsrfProtection);
 
 app.use(timeoutHandlerConfig);
