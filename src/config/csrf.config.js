@@ -28,7 +28,7 @@ const {
   getSessionIdentifier: (req) => {
     if (isTest) return 'test-session';
     const sid = req.cookies[SID_NAME];
-    if (!sid) throw new MissingSessionError('Session identifier missing');
+    if (!sid) throw new MissingSessionError();
     return sid;
   },
 
