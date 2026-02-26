@@ -1,5 +1,6 @@
-import { MongoClient, ServerApiVersion } from "mongodb";
-import { MONGO_URI, DB_NAME } from "../config/env.js";
+import { MongoClient, ServerApiVersion } from 'mongodb';
+import { MONGO_URI, DB_NAME } from '../config/env.js';
+import logger from '../config/logger.config.js';
 
 export default class MongoDBConnection {
   static #client = null;
@@ -35,20 +36,35 @@ export default class MongoDBConnection {
         const tempClient = new MongoClient(MONGO_URI, this.#options);
 
         tempClient.on('error', (err) => {
-          console.error("[MongoDB] Runtime Error:", err.message);
+          logger.error(
+            { event: 'database_runtime_error', err },
+            '[MongoDB] Runtime error',
+          );
           this.#reset();
         });
 
-        tempClient.on('close', () => this.#reset());
+        tempClient.on('close', () => {
+          logger.warn(
+            { event: 'database_connection_closed' },
+            '[MongoDB] Connection closed unexpectedly',
+          );
+          this.#reset();
+        });
 
         await tempClient.connect();
         await tempClient.db(targetDb).command({ ping: 1 });
 
         this.#client = tempClient;
-        console.log(`[MongoDB] New Connection Established for [${targetDb}].`);
+        logger.info(
+          { event: 'database_connected', db: targetDb },
+          `[MongoDB] New connection established for [${targetDb}]`,
+        );
       } catch (err) {
         this.#reset();
-        console.error("[MongoDB] Connection Error:", err.message);
+        logger.error(
+          { event: 'database_connection_failed', err },
+          '[MongoDB] Connection error',
+        );
         throw err;
       } finally {
         this.#connectionPromise = null;
@@ -56,7 +72,7 @@ export default class MongoDBConnection {
     })();
 
     await this.#connectionPromise;
-    if (!this.#client) throw new Error("[MongoDB] Failed to establish connection.");
+    if (!this.#client) throw new Error('[MongoDB] Failed to establish connection.');
     return this.#getAndCacheDb(targetDb);
   }
 
@@ -64,9 +80,15 @@ export default class MongoDBConnection {
     if (this.#client) {
       try {
         await this.#client.close();
-        console.log("[MongoDB] Connection closed gracefully.");
+        logger.info(
+          { event: 'database_disconnected' },
+          '[MongoDB] Connection closed gracefully',
+        );
       } catch (err) {
-        console.error("[MongoDB] Error during disconnection:", err.message);
+        logger.error(
+          { event: 'database_disconnect_failed', err },
+          '[MongoDB] Error during disconnection',
+        );
       } finally {
         this.#reset();
       }
@@ -74,7 +96,7 @@ export default class MongoDBConnection {
   }
 
   static #getAndCacheDb(name) {
-    if (!this.#client) throw new Error("[MongoDB] Client not initialized.");
+    if (!this.#client) throw new Error('[MongoDB] Client not initialized.');
     const db = this.#client.db(name);
     this.#dbCache.set(name, db);
     return db;

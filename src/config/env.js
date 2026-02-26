@@ -1,6 +1,8 @@
 export const isProd = process.env.NODE_ENV === 'production';
 export const isTest = process.env.NODE_ENV === 'test';
 export const isDev = process.env.NODE_ENV === 'development';
+export const SID_NAME = process.env.NODE_ENV === 'production'? '__Host-sid' : 'sid';
+export const CSRF_NAME = process.env.NODE_ENV === 'production'? '__Host-csrf-secret' : 'csrf-secret';
 
 export const PORT = process.env.PORT || 3000;
 export const DB_NAME = process.env.DB_NAME;

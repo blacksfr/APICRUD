@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import timeout from 'connect-timeout';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import hpp from 'hpp';
+import compression from 'compression';
 import routes from '../routes/user.route.js';
 import httpLogger from '../config/http.logger.config.js';
 import corsConfig from '../config/cors.config.js';
@@ -26,14 +28,19 @@ app.use(helmet(helmetConfig));
 
 app.use(cors(corsConfig));
 
+app.use(compression());
+
 app.use(ratelimitglobalConfig);
 
 app.use(express.json({ limit: '1mb' }));
 
 app.use(cookieParser(COOKIE_SECRET));
 
+app.use(hpp());
+
 app.use(ensureSessionId);
 
+// lgtm[js/missing-token-validation] - CSRF protection provided by csrf-csrf (doubleCsrfProtection)
 app.use(doubleCsrfProtection);
 
 app.use(timeoutHandlerConfig);

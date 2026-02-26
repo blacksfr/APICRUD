@@ -1,7 +1,7 @@
 import { isProd, isTest, PORT } from "./env.js";
 
 const whitelist = isProd
-  ? ['https://api-crud-blacksfritching.vercel.app']
+  ? ['https://api-crud-blacksfritching.vercel.app', 'https://frontend-blacksfritching.vercel.app']
   : [
       `http://localhost:${PORT || 3000}`,
       'http://localhost:5173',
@@ -16,8 +16,9 @@ export default {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token', 'x-refresh-token'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Refresh-Token'],
+  exposedHeaders: ['X-Request-Id'],
   credentials: true,
   maxAge: 86400,
 };

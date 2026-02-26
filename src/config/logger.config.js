@@ -11,6 +11,7 @@ const REDACTED_FIELDS = [
   'cookie',
   'email',
   'emailHmac',
+  'req.remoteAddress',
   'req.headers.authorization',
   'req.headers.cookie',
   'res.headers["set-cookie"]',
@@ -18,27 +19,30 @@ const REDACTED_FIELDS = [
 
 const logger = pino({
   level: isProd ? 'info' : 'debug',
-
   redact: {
-    paths:   REDACTED_FIELDS,
-    censor:  '[Redacted]',
+    paths: REDACTED_FIELDS,
+    censor: '[Redacted]',
   },
+
   transport: isProd
     ? undefined
     : {
-        target:  'pino-pretty',
-        options: {
-          colorize:        true,
-          translateTime:   'SYS:HH:MM:ss',
-          ignore:        'pid,hostname,env,version',
-          messageFormat:   '{msg}',
-        },
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:HH:MM:ss',
+        ignore: 'pid,hostname,env,version',
+        messageFormat: '{msg}',
       },
+    },
+
   base: {
-    env:     process.env.NODE_ENV,
+    env: process.env.NODE_ENV,
     version: process.env.npm_package_version,
   },
+
   timestamp: pino.stdTimeFunctions.isoTime,
+
   serializers: {
     err: pino.stdSerializers.err,
     req: pino.stdSerializers.req,

@@ -26,7 +26,7 @@ export const UserDbOutputSchema = z
   .object({
     _id:       ObjectIdSchema,
     username:  z.string(),
-    email:     encryptedEmailField,
+    email:     z.string(),
     emailHmac: z.string(),
     password:  z.string(),
     isDeleted: z.boolean(),
@@ -39,7 +39,7 @@ export const UserDbOutputPublicSchema = z
   .object({
     _id:       ObjectIdSchema,
     username:  z.string(),
-    email:     z.string(),
+    email:     encryptedEmailField,
     createdAt: z.date(),
     updatedAt: z.date(),
   })

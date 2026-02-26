@@ -1,4 +1,5 @@
 import pinoHttp from 'pino-http';
+import crypto from 'crypto';
 import logger from './logger.config.js';
 import { isProd } from './env.js';
 
@@ -14,24 +15,24 @@ const httpLogger = pinoHttp({
   },
   customLogLevel: (req, res, err) => {
     if (err || res.statusCode >= 500) return 'error';
-    if (res.statusCode >= 400)        return 'warn';
+    if (res.statusCode >= 400) return 'warn';
     return 'info';
   },
   customSuccessMessage: (req, res) =>
-  `${req.method} ${req.url} - ${res.statusCode}`,
+    `${req.method} ${req.url} - ${res.statusCode}`,
 
-customErrorMessage: (req, res, err) =>
-  `${req.method} ${req.url} - ${res.statusCode} - ${err.message}`,
+  customErrorMessage: (req, res, err) =>
+    `${req.method} ${req.url} - ${res.statusCode} - ${err.message}`,
   customProps: (req) => ({
     requestId: req.id,
-    ip:        req.ip ?? req.headers['x-forwarded-for'],
+    ip: req.ip ?? req.headers['x-forwarded-for'],
   }),
   serializers: {
     req(req) {
       return {
-        id:     req.id,
+        id: req.id,
         method: req.method,
-        url:    req.url,
+        url: req.url,
       };
     },
     res(res) {
@@ -40,8 +41,11 @@ customErrorMessage: (req, res, err) =>
       };
     },
   },
-  genReqId: (req) =>
-    req.headers['x-request-id'] ?? crypto.randomUUID(),
+  genReqId: (req, res) => {
+    const id = req.headers['x-request-id'] ?? crypto.randomUUID();
+    res.setHeader('x-request-id', id);
+    return id;
+  },
   ...(isProd && {
     customAttributeKeys: {
       responseTime: 'durationMs',

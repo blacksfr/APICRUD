@@ -3,11 +3,12 @@ import MongoDBConnection from '../connections/mongodb.connection.js';
 import InvalidIDFormatError from '../errors/validation.error.js';
 import DecryptionError from '../errors/decrypt.error.js';
 import EncryptionError from '../errors/encrypt.error.js';
+import logger from '../config/logger.config.js';
 
-const unwrapZodCause = (error) => {
-  if (error?.issues?.[0]?.input !== undefined) return error;
-  const cause = error?.cause ?? error?.issues?.[0]?.cause;
-  return cause ?? error;
+const unwrapZodCause = (err) => {
+  if (err?.issues?.[0]?.input !== undefined) return err;
+  const cause = err?.cause ?? err?.issues?.[0]?.cause;
+  return cause ?? err;
 };
 
 const IMMUTABLE_FIELDS = ['_id', 'isDeleted', 'createdAt', 'updatedAt', 'deletedAt'];
@@ -33,6 +34,7 @@ const stripImmutable = (data) => {
   for (const field of IMMUTABLE_FIELDS) delete clean[field];
   return clean;
 };
+
 export default class BaseRepository {
   #outputSchema;
   #outputSchemaPublic;
@@ -53,11 +55,14 @@ export default class BaseRepository {
     if (!doc) return null;
     try {
       return this.#outputSchemaPublic.parse(doc);
-    } catch (error) {
-      const cause = unwrapZodCause(error);
+    } catch (err) {
+      const cause = unwrapZodCause(err);
       if (cause instanceof DecryptionError) throw cause;
       if (cause instanceof EncryptionError) throw cause;
-      console.error('[BaseRepository] Public sanitisation failed:', error);
+      logger.error(
+        { event: 'sanitization_failed', collection: this.collectionName, err },
+        '[BaseRepository] Public sanitization failed',
+      );
       throw new Error('INTERNAL_SERVER_ERROR');
     }
   }
@@ -66,11 +71,14 @@ export default class BaseRepository {
     if (!doc) return null;
     try {
       return this.#outputSchema.parse(doc);
-    } catch (error) {
-      const cause = unwrapZodCause(error);
+    } catch (err) {
+      const cause = unwrapZodCause(err);
       if (cause instanceof DecryptionError) throw cause;
       if (cause instanceof EncryptionError) throw cause;
-      console.error('[BaseRepository] Internal sanitisation failed:', error);
+      logger.error(
+        { event: 'sanitization_failed', collection: this.collectionName, err },
+        '[BaseRepository] Internal sanitization failed',
+      );
       throw new Error('INTERNAL_SERVER_ERROR');
     }
   }
@@ -86,6 +94,11 @@ export default class BaseRepository {
     };
 
     const { insertedId } = await col.insertOne(doc);
+
+    logger.debug(
+      { event: 'document_created', collection: this.collectionName, id: insertedId },
+      '[BaseRepository] Document created',
+    );
 
     return this.#sanitizePublic({ _id: insertedId, ...doc });
   }
@@ -104,6 +117,18 @@ export default class BaseRepository {
       { returnDocument: 'after', projection: REDACT_CREDENTIALS },
     );
 
+    if (!result) {
+      logger.warn(
+        { event: 'document_update_not_found', collection: this.collectionName, id },
+        '[BaseRepository] Update target not found',
+      );
+    } else {
+      logger.debug(
+        { event: 'document_updated', collection: this.collectionName, id },
+        '[BaseRepository] Document updated',
+      );
+    }
+
     return this.#sanitizePublic(result);
   }
 
@@ -121,7 +146,21 @@ export default class BaseRepository {
       },
     );
 
-    return modifiedCount > 0;
+    const deleted = modifiedCount > 0;
+
+    if (deleted) {
+      logger.debug(
+        { event: 'document_soft_deleted', collection: this.collectionName, id },
+        '[BaseRepository] Document soft-deleted',
+      );
+    } else {
+      logger.warn(
+        { event: 'document_delete_not_found', collection: this.collectionName, id },
+        '[BaseRepository] Delete target not found or already deleted',
+      );
+    }
+
+    return deleted;
   }
 
   async findById(id) {
@@ -131,6 +170,13 @@ export default class BaseRepository {
       { _id: toObjectId(id), isDeleted: { $ne: true } },
       { projection: REDACT_CREDENTIALS },
     );
+
+    if (!doc) {
+      logger.debug(
+        { event: 'document_not_found', collection: this.collectionName, id },
+        '[BaseRepository] Document not found by id',
+      );
+    }
 
     return this.#sanitizePublic(doc);
   }
@@ -143,6 +189,13 @@ export default class BaseRepository {
       { projection: REDACT_CREDENTIALS },
     );
 
+    if (!doc) {
+      logger.debug(
+        { event: 'document_not_found', collection: this.collectionName },
+        '[BaseRepository] Document not found by filter',
+      );
+    }
+
     return this.#sanitizePublic(doc);
   }
 
@@ -153,6 +206,11 @@ export default class BaseRepository {
       ...sanitizeFilter(filter),
       isDeleted: { $ne: true },
     });
+
+    logger.debug(
+      { event: 'login_lookup', collection: this.collectionName, found: !!doc },
+      '[BaseRepository] Login lookup completed',
+    );
 
     return this.#sanitizeInternal(doc);
   }
@@ -167,12 +225,15 @@ export default class BaseRepository {
 
     return count > 0;
   }
+
   async existsById(id) {
     const col = await this.#getCollection();
+
     const count = await col.countDocuments(
       { _id: toObjectId(id), isDeleted: { $ne: true } },
       { limit: 1 },
     );
+
     return count > 0;
   }
 }
